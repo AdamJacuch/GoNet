@@ -5,9 +5,9 @@ GoNet is a lightweight, minimalistic neural network implementation written in Go
 ---
 
 ## **Features**
-- 🔹 **Core Functionality**: Implements basic MLP architecture.  
-- 🔹 **Training Algorithm**: Batch stochastic gradient descent with backpropagation.  
-- 🔹 **Lightweight Design**: Focused on simplicity and clarity, making it an excellent starting point for those interested in learning about neural networks.  
+- ✔️ **Core Functionality**: Implements basic MLP architecture.  
+- ✔️ **Training Algorithm**: Batch stochastic gradient descent with backpropagation.  
+- ✔️ **Lightweight Design**: Focused on simplicity and clarity, making it an excellent starting point for those interested in learning about neural networks.  
 
 ---
 
