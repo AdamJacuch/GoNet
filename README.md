@@ -21,11 +21,67 @@ These features may be added in the future, but active development may be limited
 ---
 
 ## **Usage**
-While the repository is still a work in progress, you can:
-1. Clone the project.  
-2. Experiment with the provided functionality to train basic neural networks in Go.  
+To get started with GoNet, you can install the library using the following command:  
+```bash
+go get github.com/AdamJacuch/GoNet@latest
+```
 
-More detailed setup instructions and examples are provided in the repository.
+---
+
+## **Sample Implementation**
+Below is an example of how to use GoNet to train and test a simple neural network:
+
+```go
+package main
+
+import (
+	"fmt"
+
+	gonet "github.com/AdamJacuch/GoNet"
+)
+
+func main() {
+	gonet.NumEpochs = 1000
+	gonet.BatchSize = 4
+
+	data := [][]float64{
+		{0, 0, 1, 1, -1, 1, 0, -1},
+		{1, 1, 1, 1, -1, 1, 0, 1},
+		{-1, 0, -1, 1, -1, -1, -1},
+		{-1, 1, -1, 1, -1, 1, -1},
+		{1, -1, 1, -1, 0, 0, 0, 0},
+		{1, 1, 0, 0, 0, 0, 1, 1},
+		{-1, -1, 0, 0, 0, 0, -1, -1},
+		{0, 0, 0, 0, 0, 0, 0, 0},
+		{1, 1, 1, 1, 1, 1, 1, 1},
+		{0, 0, 0, 0, 0, 0, 0, 0},
+		{-1, -1, -1, -1, -1, -1, -1, -1},
+		{1, 1, 0, 0, 0, 0, -1, -1},
+	}
+	outputs := [][]float64{
+		{0, 1, 0},
+		{0, 0, 1},
+		{1, 0, 0},
+		{0, 1, 0},
+		{0, 1, 0},
+		{0, 0, 1},
+		{1, 0, 0},
+		{0, 1, 0},
+		{0, 0, 1},
+		{0, 1, 0},
+		{1, 0, 0},
+		{0, 1, 0},
+	}
+
+	nn := gonet.NewNet([]int{8, 5, 3})
+
+	nn.Train(data, outputs, 0.01, 10)
+
+	output := nn.ForwardPass([]float64{-1, -1, 1, 1, 1, 1, 1, 1}) // should be {0, 0, 1}
+	gonet.Softmax(&output)
+	fmt.Println(output)
+}
+```
 
 ---
 
