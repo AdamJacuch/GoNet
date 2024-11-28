@@ -1,4 +1,4 @@
-package main
+package gonet
 
 import (
 	"fmt"
@@ -7,8 +7,8 @@ import (
 )
 
 var (
-	numEpochs int
-	batchSize int
+	NumEpochs int
+	BatchSize int
 
 	gradients []Weights
 )
@@ -23,7 +23,7 @@ type Weights struct {
 	biases      [][]float64
 }
 
-func newNet(size []int) Network {
+func NewNet(size []int) Network {
 	var net Network
 
 	for i := 0; i < len(size)-1; i++ {
@@ -44,44 +44,44 @@ func newNet(size []int) Network {
 	return net
 }
 
-func (net *Network) train(data [][]float64, outputs [][]float64, lr float64, numData int) {
-	for i := 0; i < numEpochs; i++ {
-		for j := 0; j < len(outputs)/batchSize; j++ {
+func (net *Network) Train(data [][]float64, outputs [][]float64, lr float64, numData int) {
+	for i := 0; i < NumEpochs; i++ {
+		for j := 0; j < len(outputs)/BatchSize; j++ {
 			var err float64
-			for k := 0; k < batchSize; k++ {
-				output := net.forwardPass(data[(j*batchSize)+k])
-				net.backwardsPass(outputs[(j*batchSize)+k], lr)
-				err += calculateError(output, outputs[(j*batchSize)+k])
+			for k := 0; k < BatchSize; k++ {
+				output := net.ForwardPass(data[(j*BatchSize)+k])
+				net.backwardsPass(outputs[(j*BatchSize)+k], lr)
+				err += calculateError(output, outputs[(j*BatchSize)+k])
 			}
 			net.update()
-			err /= float64(batchSize)
+			err /= float64(BatchSize)
 
-			if (i+1)%(numEpochs/numData) == 0 {
+			if (i+1)%(NumEpochs/numData) == 0 {
 				fmt.Printf("Epoch: %v, Batch %v, Error: %.5f\n", i+1, j+1, err)
 			}
 		}
-		if len(outputs)%batchSize > 0 {
-			start := len(outputs) - (len(outputs) % batchSize)
+		if len(outputs)%BatchSize > 0 {
+			start := len(outputs) - (len(outputs) % BatchSize)
 			if start > 0 {
 				start--
 			}
 			var err float64
 			for k := start; k < len(outputs); k++ {
-				output := net.forwardPass(data[k])
+				output := net.ForwardPass(data[k])
 				net.backwardsPass(outputs[k], lr)
 				err += calculateError(output, outputs[k])
 			}
 			net.update()
-			err /= float64(len(outputs) % batchSize)
+			err /= float64(len(outputs) % BatchSize)
 
-			if (i+1)%(numEpochs/numData) == 0 {
-				fmt.Printf("Epoch: %v, Batch %v, Error: %.5f\n", i+1, len(outputs)/batchSize+1, err)
+			if (i+1)%(NumEpochs/numData) == 0 {
+				fmt.Printf("Epoch: %v, Batch %v, Error: %.5f\n", i+1, len(outputs)/BatchSize+1, err)
 			}
 		}
 	}
 }
 
-func (net *Network) forwardPass(input []float64) []float64 {
+func (net *Network) ForwardPass(input []float64) []float64 {
 	copy(net.neurons[0], input)
 
 	for i := 0; i < len(net.neurons)-1; i++ {
@@ -222,7 +222,7 @@ func normalize(array *[]float64) {
 	}
 }
 
-func softmax(array *[]float64) {
+func Softmax(array *[]float64) {
 	var min float64 = 99
 	var max float64 = -99
 
