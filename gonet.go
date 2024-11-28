@@ -4,72 +4,208 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"os"
-	"strings"
-	"sync"
 )
 
-func forwardPass(network *[][][]float64, weights *[][]float64, input [inputSize]float64, output [outputSize]float64, batchIndex int) ([]float64, float64) {
-	copy((*network)[0][batchIndex], input[:])
+var (
+	numEpochs int
+	batchSize int
 
-	var biasIndex int
+	gradients []Weights
+)
 
-	for i := 0; i < len(*weights)-1; i++ {
-		for j := range (*network)[i+1][batchIndex] {
-			sum := 0.0
-			for k := range (*network)[i][batchIndex] {
-				weightIndex := k*len((*network)[i+1][batchIndex]) + j
-				sum += (*network)[i][batchIndex][k] * (*weights)[i][weightIndex]
-			}
-
-			if i < len(*weights)-2 {
-				sum += (*weights)[len(*weights)-1][biasIndex]
-				biasIndex++
-			}
-
-			(*network)[i+1][batchIndex][j] = sum
-		}
-
-		if i < len(*weights)-2 {
-			normalize(&(*network)[i+1][batchIndex])
-			activationFunction(&(*network)[i+1][batchIndex])
-		}
-	}
-
-	normalize(&(*network)[len(*network)-1][batchIndex])
-
-	finalOutput := (*network)[len(*network)-1][batchIndex]
-	return finalOutput, getError(finalOutput, output)
+type Network struct {
+	neurons [][]float64
+	weights Weights
 }
 
-func initWeights(weights *[][]float64, networkSize []uint8) {
-	var numBaises int
+type Weights struct {
+	connections [][]float64
+	biases      [][]float64
+}
 
-	for i := range networkSize {
+func newNet(size []int) Network {
+	var net Network
+
+	for i := 0; i < len(size)-1; i++ {
+		weightSize := size[i] * size[i+1]
+		buffer := make([]float64, weightSize)
+		for j := 0; j < weightSize; j++ {
+			buffer[j] = rand.Float64()*2 - 1
+		}
+		net.neurons = append(net.neurons, make([]float64, size[i]))
+		net.weights.connections = append(net.weights.connections, buffer)
 		if i > 0 {
-			var size int = int(networkSize[i]) * int(networkSize[i-1])
-			buffer := make([]float64, size)
+			net.weights.biases = append(net.weights.biases, make([]float64, size[i]))
+		}
+	}
 
-			for j := 0; j < size; j++ {
-				buffer[j] = rand.Float64()*2 - 1
-				//rand.NormFloat64() * math.Sqrt(2.0/float64(networkSize[i]+networkSize[i-1])) may work better
+	net.neurons = append(net.neurons, make([]float64, size[len(size)-1]))
+
+	return net
+}
+
+func (net *Network) train(data [][]float64, outputs [][]float64, lr float64, numData int) {
+	for i := 0; i < numEpochs; i++ {
+		for j := 0; j < len(outputs)/batchSize; j++ {
+			var err float64
+			for k := 0; k < batchSize; k++ {
+				output := net.forwardPass(data[(j*batchSize)+k])
+				net.backwardsPass(outputs[(j*batchSize)+k], lr)
+				err += calculateError(output, outputs[(j*batchSize)+k])
 			}
+			net.update()
+			err /= float64(batchSize)
 
-			*weights = append(*weights, buffer)
+			if (i+1)%(numEpochs/numData) == 0 {
+				fmt.Printf("Epoch: %v, Batch %v, Error: %.5f\n", i+1, j+1, err)
+			}
+		}
+		if len(outputs)%batchSize > 0 {
+			start := len(outputs) - (len(outputs) % batchSize)
+			if start > 0 {
+				start--
+			}
+			var err float64
+			for k := start; k < len(outputs); k++ {
+				output := net.forwardPass(data[k])
+				net.backwardsPass(outputs[k], lr)
+				err += calculateError(output, outputs[k])
+			}
+			net.update()
+			err /= float64(len(outputs) % batchSize)
 
-			if i < len(networkSize)-1 {
-				numBaises += int(networkSize[i])
+			if (i+1)%(numEpochs/numData) == 0 {
+				fmt.Printf("Epoch: %v, Batch %v, Error: %.5f\n", i+1, len(outputs)/batchSize+1, err)
+			}
+		}
+	}
+}
+
+func (net *Network) forwardPass(input []float64) []float64 {
+	copy(net.neurons[0], input)
+
+	for i := 0; i < len(net.neurons)-1; i++ {
+		for j := 0; j < len(net.neurons[i]); j++ {
+			for k := 0; k < len(net.neurons[i+1]); k++ {
+				if j == 0 {
+					net.neurons[i+1][k] = net.neurons[i][j] * net.weights.connections[i][(j*len(net.neurons[i+1]))+k]
+				} else {
+					net.neurons[i+1][k] += net.neurons[i][j] * net.weights.connections[i][(j*len(net.neurons[i+1]))+k]
+				}
+			}
+		}
+
+		if i < len(net.neurons)-2 {
+			for k := 0; k < len(net.neurons[i+1]); k++ {
+				net.neurons[i+1][k] += net.weights.biases[i][k]
+			}
+			normalize(&net.neurons[i+1])
+			for k := 0; k < len(net.neurons[i+1]); k++ {
+				net.neurons[i+1][k] *= 6
+				net.neurons[i+1][k] = net.neurons[i+1][k] / (1 + math.Abs(net.neurons[i+1][k]))
 			}
 		}
 	}
 
-	buffer := make([]float64, numBaises)
+	return net.neurons[len(net.neurons)-1]
+}
 
-	for j := 0; j < numBaises; j++ {
-		buffer[j] = rand.Float64()*2 - 1
+func (net *Network) backwardsPass(expected []float64, learningRate float64) {
+	networkSize := len(net.neurons)
+
+	output := net.neurons[networkSize-1]
+
+	deltas := make([][]float64, networkSize-1)
+
+	buffer := make([]float64, len(net.neurons[networkSize-1]))
+	for i := 0; i < len(net.neurons[networkSize-1]); i++ {
+		buffer[i] = 2 * (output[i] - expected[i])
+	}
+	deltas[networkSize-2] = buffer
+
+	for i := networkSize - 3; i >= 0; i-- {
+		layerDelta := make([]float64, len(net.neurons[i+1]))
+		for j := 0; j < len(net.neurons[i+1]); j++ {
+			var deltaSum float64
+			for k := 0; k < len(net.neurons[i+2]); k++ {
+				deltaSum += deltas[i+1][k] * net.weights.connections[i+1][j*len(net.neurons[i+2])+k]
+			}
+			derivative := 6 / math.Pow(1+math.Abs(net.neurons[i+1][j]), 2)
+			layerDelta[j] = deltaSum * derivative
+		}
+		deltas[i] = layerDelta
 	}
 
-	*weights = append(*weights, buffer)
+	gradientBuffer := Weights{
+		connections: make([][]float64, len(net.weights.connections)),
+		biases:      make([][]float64, len(net.weights.biases)),
+	}
+
+	for i := range gradientBuffer.connections {
+		gradientBuffer.connections[i] = make([]float64, len(net.weights.connections[i]))
+	}
+	for i := range gradientBuffer.biases {
+		gradientBuffer.biases[i] = make([]float64, len(net.weights.biases[i]))
+	}
+
+	for i := 0; i < len(net.weights.connections); i++ {
+		for j := 0; j < len(net.neurons[i]); j++ {
+			for k := 0; k < len(net.neurons[i+1]); k++ {
+				gradientChange := learningRate * deltas[i][k] * net.neurons[i][j]
+				gradientBuffer.connections[i][j*len(net.neurons[i+1])+k] = gradientChange
+			}
+		}
+
+		if i < len(net.weights.biases) {
+			for k := 0; k < len(net.neurons[i+1]); k++ {
+				biasChange := learningRate * deltas[i][k]
+				gradientBuffer.biases[i][k] = biasChange
+			}
+		}
+	}
+
+	gradients = append(gradients, gradientBuffer)
+}
+
+func (net *Network) update() {
+	deltas := Weights{
+		connections: make([][]float64, len(net.weights.connections)),
+		biases:      make([][]float64, len(net.weights.biases)),
+	}
+
+	for i := range deltas.connections {
+		deltas.connections[i] = make([]float64, len(net.weights.connections[i]))
+	}
+	for i := range deltas.biases {
+		deltas.biases[i] = make([]float64, len(net.weights.biases[i]))
+	}
+
+	numGradients := float64(len(gradients))
+	for _, gradient := range gradients {
+		for i := range gradient.connections {
+			for j := range gradient.connections[i] {
+				deltas.connections[i][j] += gradient.connections[i][j] / numGradients
+			}
+		}
+		for i := range gradient.biases {
+			for j := range gradient.biases[i] {
+				deltas.biases[i][j] += gradient.biases[i][j] / numGradients
+			}
+		}
+	}
+
+	for i := range net.weights.connections {
+		for j := range net.weights.connections[i] {
+			net.weights.connections[i][j] -= deltas.connections[i][j]
+		}
+	}
+	for i := range net.weights.biases {
+		for j := range net.weights.biases[i] {
+			net.weights.biases[i][j] -= deltas.biases[i][j]
+		}
+	}
+
+	gradients = gradients[:0]
 }
 
 func normalize(array *[]float64) {
@@ -86,165 +222,31 @@ func normalize(array *[]float64) {
 	}
 }
 
-func activationFunction(array *[]float64) {
-	for i, x := range *array {
-		x *= 6
-		(*array)[i] = (x / (1 + math.Abs(x)))
+func softmax(array *[]float64) {
+	var min float64 = 99
+	var max float64 = -99
+
+	for i := range *array {
+		if (*array)[i] < min {
+			min = (*array)[i]
+		}
+		if (*array)[i] > max {
+			max = (*array)[i]
+		}
+	}
+
+	for i := range *array {
+		(*array)[i] -= min
+		(*array)[i] /= (max - min)
 	}
 }
 
-func getError(output []float64, expected [outputSize]float64) float64 {
-	var err float64
+func calculateError(output []float64, expected []float64) float64 {
+	var err float64 = 0
 
 	for i := range output {
 		err += math.Pow(expected[i]-output[i], 2)
 	}
 
-	err /= float64(outputSize)
-
-	return err
-}
-
-func backwardPass(network *[][][]float64, weights *[][]float64, expectedOutputs [][outputSize]float64, batchSize int, learningRate float64, numGoroutines int) {
-	numLayers := len(*network)
-
-	// Prepare gradient accumulators
-	gradWeights := make([][]float64, len(*weights))
-	for i := range gradWeights {
-		gradWeights[i] = make([]float64, len((*weights)[i]))
-	}
-
-	var mutex sync.Mutex // To safely update gradients
-
-	// Calculate the size of each chunk for parallel processing
-	chunkSize := (batchSize + numGoroutines - 1) / numGoroutines
-
-	var wg sync.WaitGroup
-
-	// Launch Go routines for each chunk
-	for g := 0; g < numGoroutines; g++ {
-		start := g * chunkSize
-		end := min((g+1)*chunkSize, batchSize)
-
-		if start >= end {
-			break // No work for this Go routine
-		}
-
-		wg.Add(1)
-		go func(start, end int) {
-			defer wg.Done()
-
-			// Local gradient accumulator for this Go routine
-			localGradWeights := make([][]float64, len(*weights))
-			for i := range localGradWeights {
-				localGradWeights[i] = make([]float64, len((*weights)[i]))
-			}
-
-			for batchIndex := start; batchIndex < end; batchIndex++ {
-				expectedOutput := expectedOutputs[batchIndex]
-
-				// Prepare deltas for each layer
-				deltas := make([][]float64, numLayers)
-				for i := range deltas {
-					deltas[i] = make([]float64, len((*network)[i][batchIndex]))
-				}
-
-				// Calculate output layer deltas
-				for i := 0; i < len((*network)[numLayers-1][batchIndex]); i++ {
-					output := (*network)[numLayers-1][batchIndex][i]
-					err := output - expectedOutput[i]
-					deltas[numLayers-1][i] = 2 * err // Derivative of MSE
-				}
-
-				// Backpropagate deltas through hidden layers
-				for l := numLayers - 2; l > 0; l-- {
-					for i := 0; i < len((*network)[l][batchIndex]); i++ {
-						sum := 0.0
-						for j := 0; j < len((*network)[l+1][batchIndex]); j++ {
-							weightIndex := i*len((*network)[l+1][batchIndex]) + j
-							sum += (*weights)[l][weightIndex] * deltas[l+1][j]
-						}
-						activationDerivative := 1 / math.Pow(1+math.Abs((*network)[l][batchIndex][i]), 2) // Softsign derivative
-						deltas[l][i] = sum * activationDerivative
-					}
-				}
-
-				// Accumulate weight gradients for this chunk
-				for l := 0; l < numLayers-1; l++ {
-					for i := 0; i < len((*network)[l][batchIndex]); i++ {
-						for j := 0; j < len((*network)[l+1][batchIndex]); j++ {
-							weightGradient := deltas[l+1][j] * (*network)[l][batchIndex][i]
-							weightIndex := i*len((*network)[l+1][batchIndex]) + j
-							localGradWeights[l][weightIndex] += weightGradient
-						}
-					}
-				}
-			}
-
-			// Safely merge local gradients into the global accumulator
-			mutex.Lock()
-			for l := 0; l < len(gradWeights); l++ {
-				for i := range gradWeights[l] {
-					gradWeights[l][i] += localGradWeights[l][i]
-				}
-			}
-			mutex.Unlock()
-		}(start, end)
-	}
-
-	// Wait for all Go routines to finish
-	wg.Wait()
-
-	// Apply accumulated gradients to weights
-	for l := 0; l < len(*weights); l++ {
-		for i := range (*weights)[l] {
-			(*weights)[l][i] -= learningRate * gradWeights[l][i] / float64(batchSize) // Normalize by batch size
-		}
-	}
-}
-
-func saveModel(size []uint8, model [][]float64) error {
-	// Open the file for writing. Create it if it doesn't exist.
-	file, err := os.Create("model.gonet")
-	if err != nil {
-		return fmt.Errorf("failed to create file: %w", err)
-	}
-	defer file.Close()
-
-	// Write the size to the file.
-	metaStr := uint8ToString(size)
-	_, err = file.WriteString(metaStr + "\n")
-	if err != nil {
-		return fmt.Errorf("failed to write size: %w", err)
-	}
-
-	// Write each row of the model to the file.
-	for _, row := range model {
-		// Convert each float64 to a string and join them with spaces.
-		strRow := strings.TrimSpace(strings.Join(floatToStrings(row), " "))
-		_, err := file.WriteString(strRow + "\n")
-		if err != nil {
-			return fmt.Errorf("failed to write model data: %w", err)
-		}
-	}
-
-	return nil
-}
-
-// uint8ToString converts a []uint8 to a single space-separated string.
-func uint8ToString(data []uint8) string {
-	strs := make([]string, len(data))
-	for i, v := range data {
-		strs[i] = fmt.Sprintf("%d", v)
-	}
-	return strings.Join(strs, " ")
-}
-
-// floatToStrings converts a slice of float64 to a slice of strings.
-func floatToStrings(row []float64) []string {
-	strs := make([]string, len(row))
-	for i, v := range row {
-		strs[i] = fmt.Sprintf("%g", v)
-	}
-	return strs
+	return err / float64(len(output))
 }
