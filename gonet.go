@@ -9,14 +9,13 @@ import (
 var (
 	NumEpochs int
 	BatchSize int
+
+	gradients []Weights
 )
 
 type Network struct {
 	neurons [][]float64
 	weights Weights
-
-	gradients Weights
-	numGrads  int
 }
 
 type Weights struct {
@@ -137,38 +136,76 @@ func (net *Network) backwardsPass(expected []float64, learningRate float64) {
 		deltas[i] = layerDelta
 	}
 
+	gradientBuffer := Weights{
+		connections: make([][]float64, len(net.weights.connections)),
+		biases:      make([][]float64, len(net.weights.biases)),
+	}
+
+	for i := range gradientBuffer.connections {
+		gradientBuffer.connections[i] = make([]float64, len(net.weights.connections[i]))
+	}
+	for i := range gradientBuffer.biases {
+		gradientBuffer.biases[i] = make([]float64, len(net.weights.biases[i]))
+	}
+
 	for i := 0; i < len(net.weights.connections); i++ {
 		for j := 0; j < len(net.neurons[i]); j++ {
 			for k := 0; k < len(net.neurons[i+1]); k++ {
 				gradientChange := learningRate * deltas[i][k] * net.neurons[i][j]
-				net.gradients.connections[i][j*len(net.neurons[i+1])+k] += gradientChange
+				gradientBuffer.connections[i][j*len(net.neurons[i+1])+k] = gradientChange
 			}
 		}
 
 		if i < len(net.weights.biases) {
 			for k := 0; k < len(net.neurons[i+1]); k++ {
 				biasChange := learningRate * deltas[i][k]
-				net.gradients.biases[i][k] += biasChange
+				gradientBuffer.biases[i][k] = biasChange
 			}
 		}
 	}
 
-	net.numGrads++
+	gradients = append(gradients, gradientBuffer)
 }
 
 func (net *Network) update() {
+	deltas := Weights{
+		connections: make([][]float64, len(net.weights.connections)),
+		biases:      make([][]float64, len(net.weights.biases)),
+	}
+
+	for i := range deltas.connections {
+		deltas.connections[i] = make([]float64, len(net.weights.connections[i]))
+	}
+	for i := range deltas.biases {
+		deltas.biases[i] = make([]float64, len(net.weights.biases[i]))
+	}
+
+	numGradients := float64(len(gradients))
+	for _, gradient := range gradients {
+		for i := range gradient.connections {
+			for j := range gradient.connections[i] {
+				deltas.connections[i][j] += gradient.connections[i][j] / numGradients
+			}
+		}
+		for i := range gradient.biases {
+			for j := range gradient.biases[i] {
+				deltas.biases[i][j] += gradient.biases[i][j] / numGradients
+			}
+		}
+	}
+
 	for i := range net.weights.connections {
 		for j := range net.weights.connections[i] {
-			net.weights.connections[i][j] -= net.gradients.connections[i][j]
+			net.weights.connections[i][j] -= deltas.connections[i][j]
 		}
 	}
 	for i := range net.weights.biases {
 		for j := range net.weights.biases[i] {
-			net.weights.biases[i][j] -= net.gradients.biases[i][j]
+			net.weights.biases[i][j] -= deltas.biases[i][j]
 		}
 	}
 
-	net.gradients = Weights{}
+	gradients = gradients[:0]
 }
 
 func normalize(array *[]float64) {
