@@ -1,4 +1,4 @@
-# **GoNet: Lightweight Neural Network in Go**
+# **GoNet: Lightweight Neural Network in Go** test
 
 GoNet is a lightweight, minimalistic neural network implementation written in Go. Designed with simplicity in mind, it currently supports multilayer perceptrons (MLPs) and uses batch stochastic gradient descent with backpropagation for training.
 
